@@ -358,7 +358,7 @@ cmd_copilot() {
         -e "HOME=$HOME" \
         -e "PATH=$(get_container_path "$container")" \
         -e "TERM=${TERM:-xterm-256color}" \
-        "$container" copilot "$@"
+        "$container" copilot --yolo "$@"
 }
 
 # --- Main ---
