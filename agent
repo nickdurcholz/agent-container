@@ -10,10 +10,13 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 DEFAULT_MOUNTS=(
     "$HOME/.claude"
     "$HOME/.claude.json"
+    "$HOME/.gitconfig"
     "$HOME/.aws"
     "$HOME/.config/gh"
     "$HOME/.config/git"
     "$HOME/.config/NuGet"
+    "$HOME/.local/bin"
+    "$HOME/.local/share"
     "$HOME/.ssh"
     "$HOME/src"
 )
@@ -24,29 +27,31 @@ Usage: agent [-n <name>] <command> [options]
 
 Commands:
   build                        Build the container image
-  start [name] [workdir]       Start a named container (workdir defaults to \$PWD)
-  exec [name] [cmd...]         Run command in container (default: bash)
-  stop [name]                  Stop and remove a container
+  start [workdir]              Start a container (workdir defaults to \$PWD)
+  exec [cmd...]                Run command in container (default: bash)
+  stop                         Stop and remove a container
   list                         List running agent containers
-  claude [name] [args...]      Run claude --dangerously-skip-permissions
-  copilot [name] [args...]     Run GitHub Copilot CLI
+  claude [args...]             Run claude --dangerously-skip-permissions
+  copilot [args...]            Run GitHub Copilot CLI
 
 Start options:
   -m, --mount PATH             Mount an additional host directory (repeatable)
   --mounts PATH:PATH:...       Override the default mount list entirely
 
-Container name can be specified via -n/--name flag, AGENT_CONTAINER_NAME env var,
-or as the first positional argument to subcommands that require it.
+Container name defaults to "agent-<dir>" where <dir> is the basename of the git
+repo root, or the current directory if not in a git repo. Override with -n/--name
+or AGENT_CONTAINER_NAME.
 
 Environment variables:
-  AGENT_CONTAINER_NAME         Default container name
+  AGENT_CONTAINER_NAME         Override container name
   AGENT_FIREWALL=1             Enable network firewall (opt-in, default off)
   ANTHROPIC_API_KEY            Passed through to container if set
   AGENT_MOUNTS                 Override default mounts (colon-separated paths)
   AGENT_EXTRA_MOUNTS           Append to default mounts (colon-separated paths)
 
-Default mounts: ~/.claude, ~/.claude.json, ~/.aws, ~/.config/gh, ~/.config/git,
-                ~/.config/NuGet, ~/.ssh, ~/src
+Default mounts: ~/.claude, ~/.claude.json, ~/.gitconfig, ~/.aws, ~/.config/gh,
+                ~/.config/git, ~/.config/NuGet, ~/.local/bin, ~/.local/share,
+                ~/.ssh, ~/src
 The workdir is always mounted automatically.
 SSH and GPG agent sockets are forwarded when detected on the host.
 EOF
@@ -115,8 +120,9 @@ cmd_build() {
 resolve_name() {
     local name="${AGENT_NAME:-${AGENT_CONTAINER_NAME:-}}"
     if [ -z "$name" ]; then
-        echo "Error: container name required. Use -n <name>, AGENT_CONTAINER_NAME, or pass as argument." >&2
-        return 1
+        local git_root
+        git_root="$(git rev-parse --show-toplevel 2>/dev/null)" || true
+        name="$(basename "${git_root:-$PWD}")"
     fi
     echo "$name"
 }
@@ -226,7 +232,7 @@ cmd_start() {
     # Check if already running
     if docker ps -q --filter "name=^${container}$" | grep -q .; then
         echo "Container ${container} is already running."
-        echo "Use 'agent exec ${name}' to connect, or 'agent stop ${name}' to stop it."
+        echo "Use 'agent exec' to connect, or 'agent stop' to stop it."
         return 1
     fi
 
@@ -264,7 +270,7 @@ cmd_start() {
         -w "$workdir" \
         "$IMAGE_NAME"
 
-    echo "Started. Use 'agent exec ${name}' or 'agent claude ${name}' to connect."
+    echo "Started. Use 'agent exec' or 'agent claude' to connect."
 }
 
 get_container_path() {
@@ -380,39 +386,14 @@ done
 command="${1:-}"
 shift || true
 
-# For subcommands that need a name: if not set via -n/--name or env var,
-# consume the first positional arg as the name (backward compat)
-consume_name_arg() {
-    if [ -z "$AGENT_NAME" ] && [ -z "${AGENT_CONTAINER_NAME:-}" ] && [ $# -gt 0 ] && [[ ! "$1" =~ ^- ]]; then
-        AGENT_NAME="$1"
-        return 1  # signal: consumed one arg
-    fi
-    return 0
-}
-
 case "$command" in
     build)   cmd_build "$@" ;;
-    start)
-        consume_name_arg "$@" && true || shift
-        cmd_start "$@"
-        ;;
-    exec)
-        consume_name_arg "$@" && true || shift
-        cmd_exec "$@"
-        ;;
-    stop)
-        consume_name_arg "$@" && true || shift
-        cmd_stop "$@"
-        ;;
+    start)   cmd_start "$@" ;;
+    exec)    cmd_exec "$@" ;;
+    stop)    cmd_stop "$@" ;;
     list)    cmd_list "$@" ;;
-    claude)
-        consume_name_arg "$@" && true || shift
-        cmd_claude "$@"
-        ;;
-    copilot)
-        consume_name_arg "$@" && true || shift
-        cmd_copilot "$@"
-        ;;
+    claude)  cmd_claude "$@" ;;
+    copilot) cmd_copilot "$@" ;;
     -h|--help|help|"")
         usage
         exit 0
