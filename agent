@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+set -euo pipefail
+
+IMAGE_NAME="agent-container:latest"
+CONTAINER_PREFIX="agent"
+LABEL="agent-container=true"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
+usage() {
+    cat <<EOF
+Usage: agent [-n <name>] <command> [options]
+
+Commands:
+  build                        Build the container image
+  start [name] [workdir]       Start a named container (workdir defaults to \$PWD)
+  exec [name] [cmd...]         Run command in container (default: bash)
+  stop [name]                  Stop and remove a container
+  list                         List running agent containers
+  claude [name] [args...]      Run claude --dangerously-skip-permissions
+  copilot [name] [args...]     Run GitHub Copilot CLI
+
+Container name can be specified via -n/--name flag, AGENT_CONTAINER_NAME env var,
+or as the first positional argument to subcommands that require it.
+
+Environment variables:
+  AGENT_CONTAINER_NAME         Default container name
+  AGENT_FIREWALL=1             Enable network firewall (opt-in, default off)
+  ANTHROPIC_API_KEY            Passed through to container if set
+EOF
+}
+
+find_devcontainer_cli() {
+    # The standalone @devcontainers/cli may be shadowed by a VS Code shim.
+    # Prefer the npm-installed standalone version.
+    local npm_root
+    npm_root="$(npm root -g 2>/dev/null)" || true
+    if [ -n "$npm_root" ] && [ -x "${npm_root%/lib/node_modules}/bin/devcontainer" ]; then
+        echo "${npm_root%/lib/node_modules}/bin/devcontainer"
+        return
+    fi
+    if command -v devcontainer >/dev/null 2>&1; then
+        echo "devcontainer"
+        return
+    fi
+    return 1
+}
+
+DOTENV_DOCKER_ARGS=()
+
+load_dotenv() {
+    local dir="$PWD" files=()
+    while [ "$dir" != "/" ]; do
+        [ -f "$dir/.env" ] && files+=("$dir/.env")
+        dir="$(dirname "$dir")"
+    done
+    [ ${#files[@]} -eq 0 ] && return
+
+    local -A seen=()
+    # Source root-first so nearest .env wins
+    for (( i=${#files[@]}-1; i>=0; i-- )); do
+        set -a
+        # shellcheck disable=SC1090
+        source "${files[$i]}"
+        set +a
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*= ]]; then
+                local varname="${BASH_REMATCH[2]}"
+                if [ -z "${seen[$varname]+x}" ]; then
+                    seen[$varname]=1
+                    DOTENV_DOCKER_ARGS+=(-e "$varname")
+                fi
+            fi
+        done < "${files[$i]}"
+    done
+}
+
+cmd_build() {
+    echo "Building ${IMAGE_NAME}..."
+    local dc
+    if dc=$(find_devcontainer_cli); then
+        "$dc" build \
+            --workspace-folder "$SCRIPT_DIR" \
+            --image-name "$IMAGE_NAME"
+    else
+        echo "Error: devcontainer CLI not found." >&2
+        echo "Install it with: npm install -g @devcontainers/cli" >&2
+        exit 1
+    fi
+    echo "Done. Image: ${IMAGE_NAME}"
+}
+
+resolve_name() {
+    local name="${AGENT_NAME:-${AGENT_CONTAINER_NAME:-}}"
+    if [ -z "$name" ]; then
+        echo "Error: container name required. Use -n <name>, AGENT_CONTAINER_NAME, or pass as argument." >&2
+        return 1
+    fi
+    echo "$name"
+}
+
+cmd_start() {
+    local name
+    name="$(resolve_name)" || { usage >&2; exit 1; }
+    local workdir="${1:-$PWD}"
+    local container="$CONTAINER_PREFIX-$name"
+
+    # Resolve workdir to absolute path
+    workdir="$(cd "$workdir" && pwd)"
+
+    # Check if already running
+    if docker ps -q --filter "name=^${container}$" | grep -q .; then
+        echo "Container ${container} is already running."
+        echo "Use 'agent exec ${name}' to connect, or 'agent stop ${name}' to stop it."
+        return 1
+    fi
+
+    # Clean up stopped container with same name
+    if docker ps -aq --filter "name=^${container}$" | grep -q .; then
+        docker rm "$container" >/dev/null
+    fi
+
+    echo "Starting ${container} (workdir: ${workdir})..."
+
+    local env_args=()
+    env_args+=(-e "HOST_USER=$(whoami)")
+    env_args+=(-e "HOST_UID=$(id -u)")
+    env_args+=(-e "HOST_GID=$(id -g)")
+    env_args+=(-e "HOST_HOME=$HOME")
+    env_args+=(-e "AGENT_FIREWALL=${AGENT_FIREWALL:-0}")
+
+    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+        env_args+=(-e "ANTHROPIC_API_KEY")
+    fi
+
+    docker run -d \
+        --name "$container" \
+        --hostname "$container" \
+        --label "$LABEL" \
+        "${DOTENV_DOCKER_ARGS[@]}" \
+        "${env_args[@]}" \
+        --cap-add NET_ADMIN \
+        --cap-add NET_RAW \
+        -v "${HOME}:${HOME}" \
+        -w "$workdir" \
+        "$IMAGE_NAME"
+
+    echo "Started. Use 'agent exec ${name}' or 'agent claude ${name}' to connect."
+}
+
+get_container_path() {
+    local container="$1"
+    local base_path
+    base_path=$(docker exec "$container" printenv PATH 2>/dev/null) || base_path="/usr/local/bin:/usr/bin:/bin"
+    echo "$HOME/.local/bin:$base_path"
+}
+
+cmd_exec() {
+    local name
+    name="$(resolve_name)" || { usage >&2; exit 1; }
+    local container="$CONTAINER_PREFIX-$name"
+
+    if [ $# -eq 0 ]; then
+        set -- bash
+    fi
+
+    local tty_flags="-i"
+    if [ -t 0 ]; then
+        tty_flags="-it"
+    fi
+
+    docker exec $tty_flags \
+        -u "$(id -u):$(id -g)" \
+        -w "$(pwd)" \
+        "${DOTENV_DOCKER_ARGS[@]}" \
+        -e "HOME=$HOME" \
+        -e "PATH=$(get_container_path "$container")" \
+        -e "TERM=${TERM:-xterm-256color}" \
+        "$container" "$@"
+}
+
+cmd_stop() {
+    local name
+    name="$(resolve_name)" || { usage >&2; exit 1; }
+    local container="$CONTAINER_PREFIX-$name"
+
+    echo "Stopping ${container}..."
+    docker stop "$container" >/dev/null 2>&1 || true
+    docker rm "$container" >/dev/null 2>&1 || true
+    echo "Stopped."
+}
+
+cmd_list() {
+    docker ps -a \
+        --filter "label=$LABEL" \
+        --format 'table {{.Names}}\t{{.Status}}\t{{.RunningFor}}'
+}
+
+cmd_claude() {
+    local name
+    name="$(resolve_name)" || { usage >&2; exit 1; }
+    local container="$CONTAINER_PREFIX-$name"
+
+    local tty_flags="-i"
+    if [ -t 0 ]; then
+        tty_flags="-it"
+    fi
+
+    docker exec $tty_flags \
+        -u "$(id -u):$(id -g)" \
+        -w "$(pwd)" \
+        "${DOTENV_DOCKER_ARGS[@]}" \
+        -e "HOME=$HOME" \
+        -e "PATH=$(get_container_path "$container")" \
+        -e "TERM=${TERM:-xterm-256color}" \
+        "$container" claude --dangerously-skip-permissions "$@"
+}
+
+cmd_copilot() {
+    local name
+    name="$(resolve_name)" || { usage >&2; exit 1; }
+    local container="$CONTAINER_PREFIX-$name"
+
+    local tty_flags="-i"
+    if [ -t 0 ]; then
+        tty_flags="-it"
+    fi
+
+    docker exec $tty_flags \
+        -u "$(id -u):$(id -g)" \
+        -w "$(pwd)" \
+        "${DOTENV_DOCKER_ARGS[@]}" \
+        -e "HOME=$HOME" \
+        -e "PATH=$(get_container_path "$container")" \
+        -e "TERM=${TERM:-xterm-256color}" \
+        "$container" copilot "$@"
+}
+
+# --- Main ---
+
+load_dotenv
+
+# Parse global flags before the subcommand
+AGENT_NAME=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -n|--name)
+            AGENT_NAME="${2:?Error: -n/--name requires a value}"
+            shift 2
+            ;;
+        -*)
+            # Pass through -h/--help and unknown flags to the case below
+            break
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+command="${1:-}"
+shift || true
+
+# For subcommands that need a name: if not set via -n/--name or env var,
+# consume the first positional arg as the name (backward compat)
+consume_name_arg() {
+    if [ -z "$AGENT_NAME" ] && [ -z "${AGENT_CONTAINER_NAME:-}" ] && [ $# -gt 0 ] && [[ ! "$1" =~ ^- ]]; then
+        AGENT_NAME="$1"
+        return 1  # signal: consumed one arg
+    fi
+    return 0
+}
+
+case "$command" in
+    build)   cmd_build "$@" ;;
+    start)
+        consume_name_arg "$@" && true || shift
+        cmd_start "$@"
+        ;;
+    exec)
+        consume_name_arg "$@" && true || shift
+        cmd_exec "$@"
+        ;;
+    stop)
+        consume_name_arg "$@" && true || shift
+        cmd_stop "$@"
+        ;;
+    list)    cmd_list "$@" ;;
+    claude)
+        consume_name_arg "$@" && true || shift
+        cmd_claude "$@"
+        ;;
+    copilot)
+        consume_name_arg "$@" && true || shift
+        cmd_copilot "$@"
+        ;;
+    -h|--help|help|"")
+        usage
+        exit 0
+        ;;
+    *)
+        echo "Unknown command: $command" >&2
+        usage >&2
+        exit 1
+        ;;
+esac
