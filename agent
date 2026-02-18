@@ -7,6 +7,17 @@ CONTAINER_PREFIX="agent"
 LABEL="agent-container=true"
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
+DEFAULT_MOUNTS=(
+    "$HOME/.claude"
+    "$HOME/.claude.json"
+    "$HOME/.aws"
+    "$HOME/.config/gh"
+    "$HOME/.config/git"
+    "$HOME/.config/NuGet"
+    "$HOME/.ssh"
+    "$HOME/src"
+)
+
 usage() {
     cat <<EOF
 Usage: agent [-n <name>] <command> [options]
@@ -20,6 +31,10 @@ Commands:
   claude [name] [args...]      Run claude --dangerously-skip-permissions
   copilot [name] [args...]     Run GitHub Copilot CLI
 
+Start options:
+  -m, --mount PATH             Mount an additional host directory (repeatable)
+  --mounts PATH:PATH:...       Override the default mount list entirely
+
 Container name can be specified via -n/--name flag, AGENT_CONTAINER_NAME env var,
 or as the first positional argument to subcommands that require it.
 
@@ -27,6 +42,13 @@ Environment variables:
   AGENT_CONTAINER_NAME         Default container name
   AGENT_FIREWALL=1             Enable network firewall (opt-in, default off)
   ANTHROPIC_API_KEY            Passed through to container if set
+  AGENT_MOUNTS                 Override default mounts (colon-separated paths)
+  AGENT_EXTRA_MOUNTS           Append to default mounts (colon-separated paths)
+
+Default mounts: ~/.claude, ~/.claude.json, ~/.aws, ~/.config/gh, ~/.config/git,
+                ~/.config/NuGet, ~/.ssh, ~/src
+The workdir is always mounted automatically.
+SSH and GPG agent sockets are forwarded when detected on the host.
 EOF
 }
 
@@ -99,10 +121,103 @@ resolve_name() {
     echo "$name"
 }
 
+# Populate MOUNT_DOCKER_ARGS with -v flags for selective directory mounts.
+# Args: workdir, extra_mounts array (passed as remaining args), override_mounts string
+build_mount_args() {
+    local workdir="$1" override_mounts="$2"
+    shift 2
+    local -a extra_mounts=("$@")
+
+    MOUNT_DOCKER_ARGS=()
+    local -a mounts=()
+
+    # Determine base mount list
+    if [ -n "$override_mounts" ]; then
+        IFS=':' read -ra mounts <<< "$override_mounts"
+    elif [ -n "${AGENT_MOUNTS:-}" ]; then
+        IFS=':' read -ra mounts <<< "$AGENT_MOUNTS"
+    else
+        mounts=("${DEFAULT_MOUNTS[@]}")
+    fi
+
+    # Append from AGENT_EXTRA_MOUNTS env var
+    if [ -n "${AGENT_EXTRA_MOUNTS:-}" ]; then
+        local -a env_extras=()
+        IFS=':' read -ra env_extras <<< "$AGENT_EXTRA_MOUNTS"
+        mounts+=("${env_extras[@]}")
+    fi
+
+    # Append from --mount flags
+    mounts+=("${extra_mounts[@]}")
+
+    # Auto-add workdir if not covered by any existing mount
+    local workdir_covered=false
+    for m in "${mounts[@]}"; do
+        if [[ "$workdir" == "$m" || "$workdir" == "$m"/* ]]; then
+            workdir_covered=true
+            break
+        fi
+    done
+    if ! $workdir_covered; then
+        mounts+=("$workdir")
+    fi
+
+    # Deduplicate and emit -v flags, skipping non-existent paths
+    local -A seen_mounts=()
+    for m in "${mounts[@]}"; do
+        [ -z "$m" ] && continue
+        [ -n "${seen_mounts[$m]+x}" ] && continue
+        seen_mounts[$m]=1
+        if [ -e "$m" ]; then
+            MOUNT_DOCKER_ARGS+=(-v "$m:$m")
+        fi
+    done
+}
+
+# Populate AGENT_SOCKET_ARGS with -v and -e flags for SSH/GPG agent forwarding.
+build_agent_socket_args() {
+    AGENT_SOCKET_ARGS=()
+
+    # SSH agent forwarding
+    if [ -n "${SSH_AUTH_SOCK:-}" ] && [ -S "$SSH_AUTH_SOCK" ]; then
+        AGENT_SOCKET_ARGS+=(-v "$SSH_AUTH_SOCK:$SSH_AUTH_SOCK" -e SSH_AUTH_SOCK)
+    fi
+
+    # GPG agent forwarding
+    local gpg_sock
+    gpg_sock="$(gpgconf --list-dirs agent-socket 2>/dev/null)" || true
+    if [ -n "$gpg_sock" ] && [ -S "$gpg_sock" ]; then
+        AGENT_SOCKET_ARGS+=(-v "$gpg_sock:$gpg_sock" -e "HOST_GPG_AGENT_SOCK=$gpg_sock")
+        # Mount ~/.gnupg for the public keyring (gpg needs it alongside the agent socket)
+        if [ -d "$HOME/.gnupg" ]; then
+            AGENT_SOCKET_ARGS+=(-v "$HOME/.gnupg:$HOME/.gnupg")
+        fi
+    fi
+}
+
 cmd_start() {
     local name
     name="$(resolve_name)" || { usage >&2; exit 1; }
-    local workdir="${1:-$PWD}"
+
+    # Parse start-specific flags
+    local -a extra_mounts=()
+    local override_mounts=""
+    local -a positional=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -m|--mount)
+                extra_mounts+=("${2:?Error: --mount requires a path}")
+                shift 2
+                ;;
+            --mounts)
+                override_mounts="${2:?Error: --mounts requires a colon-separated path list}"
+                shift 2
+                ;;
+            *) positional+=("$1"); shift ;;
+        esac
+    done
+
+    local workdir="${positional[0]:-$PWD}"
     local container="$CONTAINER_PREFIX-$name"
 
     # Resolve workdir to absolute path
@@ -122,6 +237,9 @@ cmd_start() {
 
     echo "Starting ${container} (workdir: ${workdir})..."
 
+    build_mount_args "$workdir" "$override_mounts" "${extra_mounts[@]+${extra_mounts[@]}}"
+    build_agent_socket_args
+
     local env_args=()
     env_args+=(-e "HOST_USER=$(whoami)")
     env_args+=(-e "HOST_UID=$(id -u)")
@@ -139,9 +257,10 @@ cmd_start() {
         --label "$LABEL" \
         "${DOTENV_DOCKER_ARGS[@]}" \
         "${env_args[@]}" \
+        "${MOUNT_DOCKER_ARGS[@]}" \
+        ${AGENT_SOCKET_ARGS[@]+"${AGENT_SOCKET_ARGS[@]}"} \
         --cap-add NET_ADMIN \
         --cap-add NET_RAW \
-        -v "${HOME}:${HOME}" \
         -w "$workdir" \
         "$IMAGE_NAME"
 

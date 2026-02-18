@@ -2,7 +2,7 @@
 
 A Docker container image for running AI coding agents (Claude Code, GitHub Copilot CLI) safely in isolation, with a thin wrapper script for easy instance management.
 
-The container mounts your home directory so it feels like your host workstation — all credentials, SSH keys, git config, and tools in `~/.local/bin` are automatically available.
+Only specific directories are mounted into the container — credentials, source code, and tool configs — rather than your entire home directory. SSH and GPG agent sockets are automatically forwarded from the host.
 
 ## Prerequisites
 
@@ -36,7 +36,7 @@ The container mounts your home directory so it feels like your host workstation 
 | Command | Description |
 |---------|-------------|
 | `agent build` | Build the container image using devcontainer CLI |
-| `agent start <name> [workdir]` | Start a named container (workdir defaults to `$PWD`) |
+| `agent start <name> [workdir] [-m PATH]... [--mounts P:P:...]` | Start a named container (workdir defaults to `$PWD`) |
 | `agent exec <name> [cmd...]` | Run a command in the container (default: `bash`) |
 | `agent stop <name>` | Stop and remove a container |
 | `agent list` | List running agent containers |
@@ -50,6 +50,50 @@ The container mounts your home directory so it feels like your host workstation 
 - **Infrastructure:** AWS CLI, OpenTofu
 - **Dev Tools:** git, gh (GitHub CLI), zsh, fzf
 
+## Mount Configuration
+
+By default, these host directories are mounted into the container:
+
+- `~/.claude` — Claude Code configuration
+- `~/.aws` — AWS credentials and config
+- `~/.config/gh` — GitHub CLI auth
+- `~/.config/NuGet` — NuGet auth
+- `~/.ssh` — SSH keys and config
+- `~/src` — Source code
+
+The working directory is always mounted automatically if not already covered by the above.
+
+**Adding extra mounts:**
+
+```bash
+# Via flag (repeatable)
+./agent start myproject ~/src/repo --mount ~/.gitconfig --mount ~/data
+
+# Via environment variable (colon-separated)
+AGENT_EXTRA_MOUNTS="$HOME/.gitconfig:$HOME/data" ./agent start myproject ~/src/repo
+```
+
+**Overriding the defaults entirely:**
+
+```bash
+# Via flag (colon-separated)
+./agent start myproject ~/src/repo --mounts "$HOME/src:$HOME/.claude"
+
+# Via environment variable
+AGENT_MOUNTS="$HOME/src:$HOME/.claude" ./agent start myproject ~/src/repo
+```
+
+Non-existent paths are silently skipped.
+
+## SSH & GPG Agent Forwarding
+
+SSH and GPG agent sockets are automatically forwarded when detected on the host:
+
+- **SSH:** If `$SSH_AUTH_SOCK` is set and the socket exists, it is bind-mounted into the container. `ssh-add -l` and `git push` over SSH work without copying keys.
+- **GPG:** If `gpgconf --list-dirs agent-socket` returns a valid socket, it is bind-mounted along with `~/.gnupg` (for the public keyring). GPG commit signing works inside the container.
+
+No configuration is needed — forwarding is automatic.
+
 ## Environment Variables
 
 | Variable | Description |
@@ -57,6 +101,8 @@ The container mounts your home directory so it feels like your host workstation 
 | `AGENT_CONTAINER_NAME` | Default container name (alternative to `-n`/`--name` flag or positional arg) |
 | `ANTHROPIC_API_KEY` | Passed to the container if set |
 | `AGENT_FIREWALL=1` | Enable opt-in network firewall (restricts outbound to whitelisted domains only) |
+| `AGENT_MOUNTS` | Override default mount list (colon-separated absolute paths) |
+| `AGENT_EXTRA_MOUNTS` | Append to default mounts (colon-separated absolute paths) |
 
 ## `.env` File Loading
 
@@ -89,7 +135,7 @@ AGENT_FIREWALL=1 ./agent start secure-task ~/src/my-repo
 
 ## Multi-Instance
 
-Each `agent start` creates an independent container. All containers share the same home directory mount but have isolated process and network namespaces:
+Each `agent start` creates an independent container. All containers share the same selective directory mounts but have isolated process and network namespaces:
 
 ```bash
 ./agent start frontend ~/src/frontend
