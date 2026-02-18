@@ -33,15 +33,15 @@ Only specific directories are mounted into the container — credentials, source
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `agent build` | Build the container image using devcontainer CLI |
-| `agent start <name> [workdir] [-m PATH]... [--mounts P:P:...]` | Start a named container (workdir defaults to `$PWD`) |
-| `agent exec <name> [cmd...]` | Run a command in the container (default: `bash`) |
-| `agent stop <name>` | Stop and remove a container |
-| `agent list` | List running agent containers |
-| `agent claude <name> [args...]` | Run `claude --dangerously-skip-permissions` |
-| `agent copilot <name> [args...]` | Run GitHub Copilot CLI |
+| Command                                                             | Description                                          |
+| ------------------------------------------------------------------- | ---------------------------------------------------- |
+| `agent build`                                                       | Build the container image using devcontainer CLI     |
+| `agent start [-n <name>] [workdir] [-m PATH]... [--mounts P:P:...]` | Start a named container (workdir defaults to `$PWD`) |
+| `agent exec [-n <name>] [cmd...]`                                   | Run a command in the container (default: `bash`)     |
+| `agent stop [-n <name>]`                                            | Stop and remove a container                          |
+| `agent list`                                                        | List running agent containers                        |
+| `agent claude [-n <name>] [args...]`                                | Run `claude --dangerously-skip-permissions`          |
+| `agent copilot [-n <name>] [args...]`                               | Run GitHub Copilot CLI                               |
 
 ## Included Tools
 
