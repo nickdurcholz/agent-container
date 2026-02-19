@@ -39,6 +39,10 @@ if [ -n "$HOST_USER" ] && [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOS
     mkdir -p "$HOST_HOME"
     chown "$HOST_UID:$HOST_GID" "$HOST_HOME"
 
+    # Create /work scratch space owned by the container user
+    mkdir -p /work
+    chown "$HOST_UID:$HOST_GID" /work
+
     # Create XDG_RUNTIME_DIR for agent sockets (normally done by systemd-logind)
     RUNTIME_DIR="/run/user/$HOST_UID"
     mkdir -p "$RUNTIME_DIR"

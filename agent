@@ -27,9 +27,9 @@ Usage: agent [-n <name>] <command> [options]
 
 Commands:
   build                        Build the container image
-  start [workdir]              Start a container (workdir defaults to \$PWD)
+  start [workdir]              Start a persistent container (workdir defaults to \$PWD)
   exec [cmd...]                Run command in container (default: bash)
-  stop                         Stop and remove a container
+  stop                         Stop and remove a persistent container
   list                         List running agent containers
   claude [args...]             Run claude --dangerously-skip-permissions
   copilot [args...]            Run GitHub Copilot CLI
@@ -37,6 +37,10 @@ Commands:
 Start options:
   -m, --mount PATH             Mount an additional host directory (repeatable)
   --mounts PATH:PATH:...       Override the default mount list entirely
+
+By default, exec/claude/copilot run in ephemeral containers that are
+automatically removed when the command exits. Use -n/--name to exec into
+a persistent container started with 'agent start'.
 
 Container name defaults to "agent-<dir>" where <dir> is the basename of the git
 repo root, or the current directory if not in a git repo. Override with -n/--name
@@ -125,6 +129,57 @@ resolve_name() {
         name="$(basename "${git_root:-$PWD}")"
     fi
     echo "$name"
+}
+
+has_explicit_name() {
+    [ -n "${AGENT_NAME:-}" ] || [ -n "${AGENT_CONTAINER_NAME:-}" ]
+}
+
+generate_suffix() {
+    od -A n -t x1 -N 4 /dev/urandom | tr -d ' \n'
+}
+
+# Run a command in a new ephemeral container (docker run --rm).
+# Used when no explicit container name is given.
+run_ephemeral() {
+    local name
+    name="$(resolve_name)"
+    local container="${CONTAINER_PREFIX}-${name}-$(generate_suffix)"
+    local workdir="$PWD"
+
+    build_mount_args "$workdir" ""
+    build_agent_socket_args
+
+    local env_args=()
+    env_args+=(-e "HOST_USER=$(whoami)")
+    env_args+=(-e "HOST_UID=$(id -u)")
+    env_args+=(-e "HOST_GID=$(id -g)")
+    env_args+=(-e "HOST_HOME=$HOME")
+    env_args+=(-e "AGENT_FIREWALL=${AGENT_FIREWALL:-0}")
+    env_args+=(-e "TERM=${TERM:-xterm-256color}")
+
+    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+        env_args+=(-e "ANTHROPIC_API_KEY")
+    fi
+
+    local tty_flags="-i"
+    if [ -t 0 ]; then
+        tty_flags="-it"
+    fi
+
+    docker run $tty_flags \
+        --name "$container" \
+        --hostname "$container" \
+        --label "$LABEL" \
+        "${DOTENV_DOCKER_ARGS[@]}" \
+        "${env_args[@]}" \
+        "${MOUNT_DOCKER_ARGS[@]}" \
+        ${AGENT_SOCKET_ARGS[@]+"${AGENT_SOCKET_ARGS[@]}"} \
+        --cap-add NET_ADMIN \
+        --cap-add NET_RAW \
+        -w "$workdir" \
+        "$IMAGE_NAME" \
+        "$@"
 }
 
 # Populate MOUNT_DOCKER_ARGS with -v flags for selective directory mounts.
@@ -281,13 +336,18 @@ get_container_path() {
 }
 
 cmd_exec() {
-    local name
-    name="$(resolve_name)" || { usage >&2; exit 1; }
-    local container="$CONTAINER_PREFIX-$name"
-
     if [ $# -eq 0 ]; then
         set -- bash
     fi
+
+    if ! has_explicit_name; then
+        run_ephemeral "$@"
+        return
+    fi
+
+    local name
+    name="$(resolve_name)" || { usage >&2; exit 1; }
+    local container="$CONTAINER_PREFIX-$name"
 
     local tty_flags="-i"
     if [ -t 0 ]; then
@@ -322,6 +382,11 @@ cmd_list() {
 }
 
 cmd_claude() {
+    if ! has_explicit_name; then
+        run_ephemeral claude --dangerously-skip-permissions "$@"
+        return
+    fi
+
     local name
     name="$(resolve_name)" || { usage >&2; exit 1; }
     local container="$CONTAINER_PREFIX-$name"
@@ -342,6 +407,11 @@ cmd_claude() {
 }
 
 cmd_copilot() {
+    if ! has_explicit_name; then
+        run_ephemeral copilot --yolo "$@"
+        return
+    fi
+
     local name
     name="$(resolve_name)" || { usage >&2; exit 1; }
     local container="$CONTAINER_PREFIX-$name"
