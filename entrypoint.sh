@@ -2,37 +2,22 @@
 # SPDX-License-Identifier: MIT
 set -e
 
-HOST_USER="${HOST_USER:-}"
+CONTAINER_USER="vscode"
 HOST_UID="${HOST_UID:-}"
 HOST_GID="${HOST_GID:-}"
 HOST_HOME="${HOST_HOME:-}"
 
-if [ -n "$HOST_USER" ] && [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOST_HOME" ]; then
-    # Handle group: reuse existing GID or create new
-    EXISTING_GROUP=$(getent group "$HOST_GID" 2>/dev/null | cut -d: -f1 || true)
-    if [ -z "$EXISTING_GROUP" ]; then
-        groupadd -g "$HOST_GID" "$HOST_USER"
+if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOST_HOME" ]; then
+    # Remap the vscode user's GID/UID to match the host
+    if [ "$(id -g "$CONTAINER_USER")" != "$HOST_GID" ]; then
+        groupmod -g "$HOST_GID" "$CONTAINER_USER" 2>/dev/null || true
     fi
-
-    # Handle user: if a user with our target UID already exists, modify it;
-    # otherwise create a new one. The devcontainer base image ships with a
-    # 'vscode' user at UID 1000, which commonly conflicts.
-    EXISTING_USER=$(getent passwd "$HOST_UID" 2>/dev/null | cut -d: -f1 || true)
-    if [ -n "$EXISTING_USER" ] && [ "$EXISTING_USER" != "$HOST_USER" ]; then
-        # Rename existing user to match host
-        usermod -l "$HOST_USER" -d "$HOST_HOME" -g "$HOST_GID" -s /bin/bash "$EXISTING_USER"
-        # Rename the user's primary group if it matches the old username
-        OLD_GROUP=$(getent group "$HOST_GID" 2>/dev/null | cut -d: -f1 || true)
-        if [ "$OLD_GROUP" = "$EXISTING_USER" ]; then
-            groupmod -n "$HOST_USER" "$OLD_GROUP" 2>/dev/null || true
-        fi
-    elif [ -z "$EXISTING_USER" ]; then
-        useradd -u "$HOST_UID" -g "$HOST_GID" -d "$HOST_HOME" -s /bin/bash -M "$HOST_USER"
+    if [ "$(id -u "$CONTAINER_USER")" != "$HOST_UID" ]; then
+        usermod -u "$HOST_UID" -g "$HOST_GID" "$CONTAINER_USER"
     fi
-    # If EXISTING_USER == HOST_USER, nothing to do
+    usermod -d "$HOST_HOME" "$CONTAINER_USER"
 
-    # Give the user passwordless sudo
-    echo "$HOST_USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/agent-user
+    echo "$CONTAINER_USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/agent-user
     chmod 0440 /etc/sudoers.d/agent-user
 
     # Ensure home directory exists (selective mounts don't create it)
@@ -59,13 +44,13 @@ if [ -n "$HOST_USER" ] && [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOS
             groupadd -g "$SOCK_GID" docker
             DOCKER_GROUP="docker"
         fi
-        usermod -aG "$DOCKER_GROUP" "$HOST_USER"
+        usermod -aG "$DOCKER_GROUP" "$CONTAINER_USER"
     fi
 
     # GPG agent forwarding: if the host socket is mounted at a path that differs
     # from where the container's gpg expects it, create a symlink.
     if [ -n "${HOST_GPG_AGENT_SOCK:-}" ] && [ -S "$HOST_GPG_AGENT_SOCK" ]; then
-        CONTAINER_GPG_SOCK="$(gosu "$HOST_USER" gpgconf --list-dirs agent-socket 2>/dev/null)" || true
+        CONTAINER_GPG_SOCK="$(gosu "$CONTAINER_USER" gpgconf --list-dirs agent-socket 2>/dev/null)" || true
         if [ -n "$CONTAINER_GPG_SOCK" ] && [ "$CONTAINER_GPG_SOCK" != "$HOST_GPG_AGENT_SOCK" ]; then
             mkdir -p "$(dirname "$CONTAINER_GPG_SOCK")"
             ln -sf "$HOST_GPG_AGENT_SOCK" "$CONTAINER_GPG_SOCK"
@@ -80,8 +65,10 @@ if [ -n "$HOST_USER" ] && [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOS
     # Ensure claude's install location and the user's own .local/bin are in PATH
     export PATH="$HOST_HOME/.local/bin:/opt/claude/.local/bin:$PATH"
 
-    # Drop privileges and exec the command as the host user
-    exec gosu "$HOST_USER" "$@"
+    chown -R "$HOST_UID:$HOST_GID" /opt/claude
+
+    # Drop privileges and exec the command as the vscode user
+    exec gosu "$CONTAINER_USER" "$@"
 else
     # No host user info — run as current user (devcontainer CLI path)
     if [ "${AGENT_FIREWALL:-0}" = "1" ]; then

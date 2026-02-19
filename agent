@@ -56,6 +56,9 @@ Environment variables:
   AGENT_MOUNTS                 Override default mounts (colon-separated paths)
   AGENT_EXTRA_MOUNTS           Append to default mounts (colon-separated paths)
 
+The container always uses the 'vscode' username from the base image.
+Host UID/GID are remapped so file ownership is correct on bind mounts.
+
 Default mounts: ~/.claude, ~/.claude.json, ~/.gitconfig, ~/.aws, ~/.config/gh,
                 ~/.config/git, ~/.config/NuGet, ~/.local/bin, ~/.local/share,
                 ~/.ssh, ~/src
@@ -154,7 +157,6 @@ run_ephemeral() {
     build_agent_socket_args
 
     local env_args=()
-    env_args+=(-e "HOST_USER=$(whoami)")
     env_args+=(-e "HOST_UID=$(id -u)")
     env_args+=(-e "HOST_GID=$(id -g)")
     env_args+=(-e "HOST_HOME=$HOME")
@@ -317,7 +319,6 @@ cmd_start() {
     build_agent_socket_args
 
     local env_args=()
-    env_args+=(-e "HOST_USER=$(whoami)")
     env_args+=(-e "HOST_UID=$(id -u)")
     env_args+=(-e "HOST_GID=$(id -g)")
     env_args+=(-e "HOST_HOME=$HOME")
