@@ -38,9 +38,12 @@ Start options:
   -m, --mount PATH             Mount an additional host directory (repeatable)
   --mounts PATH:PATH:...       Override the default mount list entirely
 
+Ephemeral options:
+  --rm                         Auto-remove container on exit (default: keep)
+
 By default, exec/claude/copilot run in ephemeral containers that are
-automatically removed when the command exits. Use -n/--name to exec into
-a persistent container started with 'agent start'.
+kept after exit so you can retrieve files. Use --rm to auto-remove them.
+Use -n/--name to exec into a persistent container started with 'agent start'.
 
 Container name defaults to "agent-<dir>" where <dir> is the basename of the git
 repo root, or the current directory if not in a git repo. Override with -n/--name
@@ -139,7 +142,7 @@ generate_suffix() {
     od -A n -t x1 -N 4 /dev/urandom | tr -d ' \n'
 }
 
-# Run a command in a new ephemeral container (docker run --rm).
+# Run a command in a new ephemeral container.
 # Used when no explicit container name is given.
 run_ephemeral() {
     local name
@@ -167,10 +170,16 @@ run_ephemeral() {
         tty_flags="-it"
     fi
 
+    local rm_flag=()
+    if [ "${AGENT_RM:-0}" = "1" ]; then
+        rm_flag=(--rm)
+    fi
+
     docker run $tty_flags \
         --name "$container" \
         --hostname "$container" \
         --label "$LABEL" \
+        ${rm_flag[@]+"${rm_flag[@]}"} \
         "${DOTENV_DOCKER_ARGS[@]}" \
         "${env_args[@]}" \
         "${MOUNT_DOCKER_ARGS[@]}" \
@@ -328,13 +337,6 @@ cmd_start() {
     echo "Started. Use 'agent exec' or 'agent claude' to connect."
 }
 
-get_container_path() {
-    local container="$1"
-    local base_path
-    base_path=$(docker exec "$container" printenv PATH 2>/dev/null) || base_path="/usr/local/bin:/usr/bin:/bin"
-    echo "$HOME/.local/bin:$base_path"
-}
-
 cmd_exec() {
     if [ $# -eq 0 ]; then
         set -- bash
@@ -358,8 +360,6 @@ cmd_exec() {
         -u "$(id -u):$(id -g)" \
         -w "$(pwd)" \
         "${DOTENV_DOCKER_ARGS[@]}" \
-        -e "HOME=$HOME" \
-        -e "PATH=$(get_container_path "$container")" \
         -e "TERM=${TERM:-xterm-256color}" \
         "$container" "$@"
 }
@@ -400,8 +400,6 @@ cmd_claude() {
         -u "$(id -u):$(id -g)" \
         -w "$(pwd)" \
         "${DOTENV_DOCKER_ARGS[@]}" \
-        -e "HOME=$HOME" \
-        -e "PATH=$(get_container_path "$container")" \
         -e "TERM=${TERM:-xterm-256color}" \
         "$container" claude --dangerously-skip-permissions "$@"
 }
@@ -425,8 +423,6 @@ cmd_copilot() {
         -u "$(id -u):$(id -g)" \
         -w "$(pwd)" \
         "${DOTENV_DOCKER_ARGS[@]}" \
-        -e "HOME=$HOME" \
-        -e "PATH=$(get_container_path "$container")" \
         -e "TERM=${TERM:-xterm-256color}" \
         "$container" copilot --yolo "$@"
 }
@@ -437,11 +433,16 @@ load_dotenv
 
 # Parse global flags before the subcommand
 AGENT_NAME=""
+AGENT_RM="0"
 while [ $# -gt 0 ]; do
     case "$1" in
         -n|--name)
             AGENT_NAME="${2:?Error: -n/--name requires a value}"
             shift 2
+            ;;
+        --rm)
+            AGENT_RM="1"
+            shift
             ;;
         -*)
             # Pass through -h/--help and unknown flags to the case below

@@ -29,10 +29,15 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && apt-get update && apt-get install -y tofu \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Claude Code and GitHub Copilot CLI (global npm packages)
-RUN npm install -g \
-    @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
-    @github/copilot@${COPILOT_VERSION}
+# install GitHub Copilot CLI (global npm packages)
+RUN npm install -g @github/copilot@${COPILOT_VERSION}
+RUN HOME=/opt/claude curl -fsSL https://claude.ai/install.sh | bash \
+    && chmod 777 -R /opt/claude
+
+RUN echo "Updating dotnet..." \
+    && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+    && chmod +x /tmp/dotnet-install.sh \
+    && /tmp/dotnet-install.sh --channel LTS --install-dir /usr/share/dotnet
 
 # Copy scripts (build context is project root via devcontainer.json "context": "..")
 COPY .devcontainer/init-firewall.sh /usr/local/bin/

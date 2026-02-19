@@ -20,14 +20,14 @@ if [ -n "$HOST_USER" ] && [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOS
     EXISTING_USER=$(getent passwd "$HOST_UID" 2>/dev/null | cut -d: -f1 || true)
     if [ -n "$EXISTING_USER" ] && [ "$EXISTING_USER" != "$HOST_USER" ]; then
         # Rename existing user to match host
-        usermod -l "$HOST_USER" -d "$HOST_HOME" -g "$HOST_GID" -s /bin/zsh "$EXISTING_USER"
+        usermod -l "$HOST_USER" -d "$HOST_HOME" -g "$HOST_GID" -s /bin/bash "$EXISTING_USER"
         # Rename the user's primary group if it matches the old username
         OLD_GROUP=$(getent group "$HOST_GID" 2>/dev/null | cut -d: -f1 || true)
         if [ "$OLD_GROUP" = "$EXISTING_USER" ]; then
             groupmod -n "$HOST_USER" "$OLD_GROUP" 2>/dev/null || true
         fi
     elif [ -z "$EXISTING_USER" ]; then
-        useradd -u "$HOST_UID" -g "$HOST_GID" -d "$HOST_HOME" -s /bin/zsh -M "$HOST_USER"
+        useradd -u "$HOST_UID" -g "$HOST_GID" -d "$HOST_HOME" -s /bin/bash -M "$HOST_USER"
     fi
     # If EXISTING_USER == HOST_USER, nothing to do
 
@@ -64,6 +64,9 @@ if [ -n "$HOST_USER" ] && [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOS
         /usr/local/bin/init-firewall.sh
     fi
 
+    # Ensure claude's install location and the user's own .local/bin are in PATH
+    export PATH="$HOST_HOME/.local/bin:/opt/claude/.local/bin:$PATH"
+
     # Drop privileges and exec the command as the host user
     exec gosu "$HOST_USER" "$@"
 else
@@ -71,5 +74,6 @@ else
     if [ "${AGENT_FIREWALL:-0}" = "1" ]; then
         /usr/local/bin/init-firewall.sh
     fi
+    export PATH="$HOME/.local/bin:/opt/claude/.local/bin:$PATH"
     exec "$@"
 fi
