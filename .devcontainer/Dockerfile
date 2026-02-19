@@ -2,7 +2,6 @@
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 ARG NODE_MAJOR=22
-ARG CLAUDE_CODE_VERSION=latest
 ARG COPILOT_VERSION=latest
 
 # Firewall and utility dependencies
@@ -13,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Node.js (needed at build time for claude-code and copilot npm packages)
+# Node.js (needed at build time for copilot npm package)
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -31,8 +30,10 @@ RUN install -m 0755 -d /etc/apt/keyrings \
 
 # install GitHub Copilot CLI (global npm packages)
 RUN npm install -g @github/copilot@${COPILOT_VERSION}
-RUN HOME=/opt/claude curl -fsSL https://claude.ai/install.sh | bash \
-    && chmod 777 -R /opt/claude
+COPY .devcontainer/install-claude.sh /tmp/install-claude.sh
+RUN chmod +x /tmp/install-claude.sh && /tmp/install-claude.sh \
+    && chmod 777 -R /opt/claude \
+    && rm /tmp/install-claude.sh
 
 RUN echo "Updating dotnet..." \
     && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \

@@ -15,8 +15,6 @@ DEFAULT_MOUNTS=(
     "$HOME/.config/gh"
     "$HOME/.config/git"
     "$HOME/.config/NuGet"
-    "$HOME/.local/bin"
-    "$HOME/.local/share"
     "$HOME/.ssh"
     "$HOME/src"
 )
@@ -60,8 +58,7 @@ The container always uses the 'vscode' username from the base image.
 Host UID/GID are remapped so file ownership is correct on bind mounts.
 
 Default mounts: ~/.claude, ~/.claude.json, ~/.gitconfig, ~/.aws, ~/.config/gh,
-                ~/.config/git, ~/.config/NuGet, ~/.local/bin, ~/.local/share,
-                ~/.ssh, ~/src
+                ~/.config/git, ~/.config/NuGet, ~/.ssh, ~/src
 The workdir is always mounted automatically.
 SSH/GPG agent sockets and Docker socket are forwarded when detected on the host.
 EOF

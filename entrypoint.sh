@@ -62,11 +62,6 @@ if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOST_HOME" ]; then
         /usr/local/bin/init-firewall.sh
     fi
 
-    # Ensure claude's install location and the user's own .local/bin are in PATH
-    export PATH="$HOST_HOME/.local/bin:/opt/claude/.local/bin:$PATH"
-
-    chown -R "$HOST_UID:$HOST_GID" /opt/claude
-
     # Drop privileges and exec the command as the vscode user
     exec gosu "$CONTAINER_USER" "$@"
 else
@@ -74,6 +69,5 @@ else
     if [ "${AGENT_FIREWALL:-0}" = "1" ]; then
         /usr/local/bin/init-firewall.sh
     fi
-    export PATH="$HOME/.local/bin:/opt/claude/.local/bin:$PATH"
     exec "$@"
 fi

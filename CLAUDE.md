@@ -23,7 +23,8 @@ The image is built using the **devcontainer CLI** (`@devcontainers/cli`), which 
 
 ## Key Architecture Decisions
 
-- **Node.js is installed in the Dockerfile**, not via a devcontainer feature, because `@anthropic-ai/claude-code` and `@github/copilot` are npm global packages that must be installed at image build time (features run after the Dockerfile but the npm install needs Node.js present in the Dockerfile layer).
+- **Node.js is installed in the Dockerfile**, not via a devcontainer feature, because `@github/copilot` is an npm global package that must be installed at image build time (features run after the Dockerfile but the npm install needs Node.js present in the Dockerfile layer).
+- **Claude Code is installed via a local copy of the bootstrap script** (`.devcontainer/install-claude.sh`, adapted from `https://claude.ai/install.sh`) that installs to `/opt/claude` instead of `$HOME/.local`. The launcher is symlinked into `/usr/local/bin/claude` so it's on PATH for all users without needing `~/.local/bin` mounts.
 - **Go, .NET, uv, gh, AWS CLI are installed via devcontainer features** in `devcontainer.json` because they have well-maintained official features and don't need to be available during earlier Dockerfile steps.
 - **The build context is `..` (project root)**, not `.devcontainer/`. This is set in `devcontainer.json` `"build.context": ".."`. COPY paths in the Dockerfile are relative to the project root (e.g., `COPY entrypoint.sh`, `COPY .devcontainer/init-firewall.sh`).
 - **Selective directory mounts at the same absolute paths** — only specific directories and files (`~/.claude`, `~/.claude.json`, `~/.gitconfig`, `~/.aws`, `~/.config/gh`, `~/.config/git`, `~/.config/NuGet`, `~/.ssh`, `~/src`) are mounted rather than the entire home directory. Each is mounted at the same absolute path so file paths work identically between host and container. The workdir is auto-mounted if not already covered. Mounts are configurable via `--mount`/`--mounts` flags and `AGENT_MOUNTS`/`AGENT_EXTRA_MOUNTS` env vars.
@@ -53,7 +54,8 @@ Without `-n`/`--name`, `exec`/`claude`/`copilot` launch ephemeral containers nam
 |------|-------------|
 | `agent` | Wrapper script — the main user interface. Handles build/start/exec/stop/list/claude/copilot. |
 | `entrypoint.sh` | Runs at container start as root. Remaps the `vscode` user's UID/GID to match the host, sets up sudoers, optionally runs firewall, then `gosu` drops to `vscode`. |
-| `.devcontainer/Dockerfile` | Image definition. Installs Node.js 20 (nodesource), Claude Code + Copilot CLI (npm), OpenTofu (apt), firewall deps (iptables/ipset/etc), and copies scripts. |
+| `.devcontainer/Dockerfile` | Image definition. Installs Node.js 20 (nodesource), Copilot CLI (npm), Claude Code (via install-claude.sh), OpenTofu (apt), firewall deps (iptables/ipset/etc), and copies scripts. |
+| `.devcontainer/install-claude.sh` | Installs Claude Code to `/opt/claude` with checksum verification. Adapted from the official `https://claude.ai/install.sh` bootstrap script. |
 | `.devcontainer/devcontainer.json` | Declares features (Go, .NET, gh, AWS CLI, uv), build args, capabilities (NET_ADMIN/NET_RAW for firewall). |
 | `.devcontainer/init-firewall.sh` | Opt-in iptables firewall. Default-deny with whitelisted domains (Anthropic API, GitHub, npm, PyPI, Go proxy, NuGet, AWS, OpenTofu). Adapted from Anthropic's reference devcontainer. |
 | `plans/01-initial-project.md` | Design document from the initial planning session. |
