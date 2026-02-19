@@ -60,7 +60,7 @@ Default mounts: ~/.claude, ~/.claude.json, ~/.gitconfig, ~/.aws, ~/.config/gh,
                 ~/.config/git, ~/.config/NuGet, ~/.local/bin, ~/.local/share,
                 ~/.ssh, ~/src
 The workdir is always mounted automatically.
-SSH and GPG agent sockets are forwarded when detected on the host.
+SSH/GPG agent sockets and Docker socket are forwarded when detected on the host.
 EOF
 }
 
@@ -262,6 +262,12 @@ build_agent_socket_args() {
         if [ -d "$HOME/.gnupg" ]; then
             AGENT_SOCKET_ARGS+=(-v "$HOME/.gnupg:$HOME/.gnupg")
         fi
+    fi
+
+    # Docker socket forwarding (docker-outside-of-docker)
+    local docker_sock="/var/run/docker.sock"
+    if [ -S "$docker_sock" ]; then
+        AGENT_SOCKET_ARGS+=(-v "$docker_sock:$docker_sock")
     fi
 }
 

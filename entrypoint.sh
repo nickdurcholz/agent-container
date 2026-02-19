@@ -49,6 +49,19 @@ if [ -n "$HOST_USER" ] && [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOS
     chown "$HOST_UID:$HOST_GID" "$RUNTIME_DIR"
     chmod 700 "$RUNTIME_DIR"
 
+    # Docker socket access: match the container's docker group GID to the
+    # mounted socket's group so the user can talk to the host daemon.
+    if [ -S /var/run/docker.sock ]; then
+        SOCK_GID=$(stat -c '%g' /var/run/docker.sock)
+        if getent group "$SOCK_GID" >/dev/null 2>&1; then
+            DOCKER_GROUP=$(getent group "$SOCK_GID" | cut -d: -f1)
+        else
+            groupadd -g "$SOCK_GID" docker
+            DOCKER_GROUP="docker"
+        fi
+        usermod -aG "$DOCKER_GROUP" "$HOST_USER"
+    fi
+
     # GPG agent forwarding: if the host socket is mounted at a path that differs
     # from where the container's gpg expects it, create a symlink.
     if [ -n "${HOST_GPG_AGENT_SOCK:-}" ] && [ -S "$HOST_GPG_AGENT_SOCK" ]; then

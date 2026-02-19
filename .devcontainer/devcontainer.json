@@ -20,7 +20,8 @@
     "ghcr.io/devcontainers/features/aws-cli:1": {
       "version": "latest"
     },
-    "ghcr.io/va-h/devcontainers-features/uv:1": {}
+    "ghcr.io/va-h/devcontainers-features/uv:1": {},
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
   },
   "runArgs": [
     "--cap-add=NET_ADMIN",

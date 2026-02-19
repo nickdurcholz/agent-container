@@ -28,6 +28,7 @@ The image is built using the **devcontainer CLI** (`@devcontainers/cli`), which 
 - **The build context is `..` (project root)**, not `.devcontainer/`. This is set in `devcontainer.json` `"build.context": ".."`. COPY paths in the Dockerfile are relative to the project root (e.g., `COPY entrypoint.sh`, `COPY .devcontainer/init-firewall.sh`).
 - **Selective directory mounts at the same absolute paths** — only specific directories and files (`~/.claude`, `~/.claude.json`, `~/.gitconfig`, `~/.aws`, `~/.config/gh`, `~/.config/git`, `~/.config/NuGet`, `~/.ssh`, `~/src`) are mounted rather than the entire home directory. Each is mounted at the same absolute path so file paths work identically between host and container. The workdir is auto-mounted if not already covered. Mounts are configurable via `--mount`/`--mounts` flags and `AGENT_MOUNTS`/`AGENT_EXTRA_MOUNTS` env vars.
 - **SSH and GPG agent sockets are auto-forwarded** when detected on the host. `$SSH_AUTH_SOCK` is bind-mounted and passed through. For GPG, the agent socket (from `gpgconf --list-dirs agent-socket`) is mounted along with `~/.gnupg` (for the public keyring), and the entrypoint handles socket path mapping if the container's gpg expects a different path.
+- **Docker socket is auto-forwarded** when `/var/run/docker.sock` exists on the host (Docker-outside-of-Docker). The Docker CLI is installed in the image via the `docker-outside-of-docker` devcontainer feature, and the entrypoint adds the container user to the group owning the socket. This gives agents the ability to build/run containers using the host's Docker daemon. Note: this means agents can interact with *all* containers on the host.
 - **The base image** (`mcr.microsoft.com/devcontainers/base:ubuntu-24.04`) ships with a `vscode` user at UID 1000. The entrypoint handles this by renaming that user to match the host user when UIDs collide.
 - **Network firewall is opt-in** (`AGENT_FIREWALL=1`) because agents frequently need to install packages from arbitrary registries, and debugging firewall issues is painful.
 
@@ -59,7 +60,7 @@ Without `-n`/`--name`, `exec`/`claude`/`copilot` launch ephemeral containers nam
 
 ## Installed Tools (in the built image)
 
-Node.js 20, Go, .NET SDK, uv, git, gh (GitHub CLI), AWS CLI, OpenTofu, Claude Code (`claude`), GitHub Copilot CLI (`copilot`), zsh, fzf, jq, gosu
+Node.js 20, Go, .NET SDK, uv, git, gh (GitHub CLI), AWS CLI, OpenTofu, Docker CLI, Claude Code (`claude`), GitHub Copilot CLI (`copilot`), zsh, fzf, jq, gosu
 
 ## Environment Variables
 
