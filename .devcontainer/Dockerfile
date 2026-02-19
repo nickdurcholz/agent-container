@@ -50,8 +50,9 @@ RUN echo "ALL ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoe
     && chmod 0440 /etc/sudoers.d/firewall /etc/sudoers.d/usermgmt
 
 RUN echo 'DEVCONTAINER=true' > /.devcontainer
-
 ENV DEVCONTAINER=true
+
+COPY container-CLAUDE.md /etc/claude-code/CLAUDE.md
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["sleep", "infinity"]
