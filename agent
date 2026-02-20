@@ -24,7 +24,7 @@ usage() {
 Usage: agent [-n <name>] <command> [options]
 
 Commands:
-  build                        Build the container image
+  build [-f|--force]           Build the container image (--force skips cache)
   start [workdir]              Start a persistent container (workdir defaults to \$PWD)
   exec [cmd...]                Run command in container (default: bash)
   stop                         Stop and remove a persistent container
@@ -110,12 +110,21 @@ load_dotenv() {
 }
 
 cmd_build() {
+    local no_cache=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -f|--force) no_cache=(--no-cache); shift ;;
+            *) echo "Unknown build option: $1" >&2; exit 1 ;;
+        esac
+    done
+
     echo "Building ${IMAGE_NAME}..."
     local dc
     if dc=$(find_devcontainer_cli); then
         "$dc" build \
             --workspace-folder "$SCRIPT_DIR" \
-            --image-name "$IMAGE_NAME"
+            --image-name "$IMAGE_NAME" \
+            ${no_cache[@]+"${no_cache[@]}"}
     else
         echo "Error: devcontainer CLI not found." >&2
         echo "Install it with: npm install -g @devcontainers/cli" >&2
