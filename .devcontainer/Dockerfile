@@ -30,10 +30,11 @@ RUN install -m 0755 -d /etc/apt/keyrings \
 
 # install GitHub Copilot CLI (global npm packages)
 RUN npm install -g @github/copilot@${COPILOT_VERSION}
-COPY .devcontainer/install-claude.sh /tmp/install-claude.sh
+COPY .devcontainer/*.sh /tmp/
 RUN chmod +x /tmp/install-claude.sh && /tmp/install-claude.sh \
     && chmod 777 -R /opt/claude \
-    && rm /tmp/install-claude.sh
+    && /tmp/install-awscli.sh \
+    && /tmp/install-go.sh
 
 RUN echo "Updating dotnet..." \
     && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
