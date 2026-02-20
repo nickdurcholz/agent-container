@@ -341,7 +341,20 @@ cmd_start() {
     echo "Started. Use 'agent exec' or 'agent claude' to connect."
 }
 
+parse_ephemeral_flags() {
+    EPHEMERAL_PASSTHROUGH=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --rm) AGENT_RM="1"; shift ;;
+            *)    EPHEMERAL_PASSTHROUGH+=("$1"); shift ;;
+        esac
+    done
+}
+
 cmd_exec() {
+    parse_ephemeral_flags "$@"
+    set -- "${EPHEMERAL_PASSTHROUGH[@]}"
+
     if [ $# -eq 0 ]; then
         set -- bash
     fi
@@ -386,6 +399,9 @@ cmd_list() {
 }
 
 cmd_claude() {
+    parse_ephemeral_flags "$@"
+    set -- "${EPHEMERAL_PASSTHROUGH[@]}"
+
     if ! has_explicit_name; then
         run_ephemeral claude --dangerously-skip-permissions "$@"
         return
@@ -409,6 +425,9 @@ cmd_claude() {
 }
 
 cmd_copilot() {
+    parse_ephemeral_flags "$@"
+    set -- "${EPHEMERAL_PASSTHROUGH[@]}"
+
     if ! has_explicit_name; then
         run_ephemeral copilot --yolo "$@"
         return
