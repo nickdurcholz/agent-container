@@ -34,7 +34,8 @@ COPY .devcontainer/*.sh /tmp/
 RUN chmod +x /tmp/install-claude.sh && /tmp/install-claude.sh \
     && chmod 777 -R /opt/claude \
     && /tmp/install-awscli.sh \
-    && /tmp/install-go.sh
+    && /tmp/install-go.sh \
+    && su vscode -c '/tmp/install-uv.sh' && su vscode -c '/home/vscode/.local/bin/uv python install 3.14'
 
 RUN echo "Updating dotnet..." \
     && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
