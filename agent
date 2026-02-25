@@ -49,7 +49,6 @@ or AGENT_CONTAINER_NAME.
 
 Environment variables:
   AGENT_CONTAINER_NAME         Override container name
-  AGENT_FIREWALL=1             Enable network firewall (opt-in, default off)
   ANTHROPIC_API_KEY            Passed through to container if set
   AGENT_MOUNTS                 Override default mounts (colon-separated paths)
   AGENT_EXTRA_MOUNTS           Append to default mounts (colon-separated paths)
@@ -166,7 +165,6 @@ run_ephemeral() {
     env_args+=(-e "HOST_UID=$(id -u)")
     env_args+=(-e "HOST_GID=$(id -g)")
     env_args+=(-e "HOST_HOME=$HOME")
-    env_args+=(-e "AGENT_FIREWALL=${AGENT_FIREWALL:-0}")
     env_args+=(-e "TERM=${TERM:-xterm-256color}")
 
     if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
@@ -192,8 +190,6 @@ run_ephemeral() {
         "${env_args[@]}" \
         "${MOUNT_DOCKER_ARGS[@]}" \
         ${AGENT_SOCKET_ARGS[@]+"${AGENT_SOCKET_ARGS[@]}"} \
-        --cap-add NET_ADMIN \
-        --cap-add NET_RAW \
         -w "$workdir" \
         "$IMAGE_NAME" \
         "$@"
@@ -328,7 +324,6 @@ cmd_start() {
     env_args+=(-e "HOST_UID=$(id -u)")
     env_args+=(-e "HOST_GID=$(id -g)")
     env_args+=(-e "HOST_HOME=$HOME")
-    env_args+=(-e "AGENT_FIREWALL=${AGENT_FIREWALL:-0}")
 
     if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
         env_args+=(-e "ANTHROPIC_API_KEY")
@@ -342,8 +337,6 @@ cmd_start() {
         "${env_args[@]}" \
         "${MOUNT_DOCKER_ARGS[@]}" \
         ${AGENT_SOCKET_ARGS[@]+"${AGENT_SOCKET_ARGS[@]}"} \
-        --cap-add NET_ADMIN \
-        --cap-add NET_RAW \
         -w "$workdir" \
         "$IMAGE_NAME"
 

@@ -13,7 +13,7 @@ The image is built using the **devcontainer CLI** (`@devcontainers/cli`), which 
 **Ephemeral mode (default):**
 1. `agent build` → `devcontainer build --image-name agent-container:latest` → Docker image
 2. `agent claude` / `agent exec` / `agent copilot` → `docker run --rm` with a random-suffix container name, selective bind mounts, SSH/GPG sockets, host user env vars, and the requested command
-3. `entrypoint.sh` runs as root: remaps the `vscode` user's UID/GID to match the host, creates home dir + `/work`, sets up GPG socket forwarding, optionally enables firewall, then `exec gosu vscode <command>`
+3. `entrypoint.sh` runs as root: remaps the `vscode` user's UID/GID to match the host, creates home dir + `/work`, sets up GPG socket forwarding, then `exec gosu vscode <command>`
 4. Container is automatically removed when the command exits
 
 **Persistent mode (with `-n <name>` or `AGENT_CONTAINER_NAME`):**
@@ -26,13 +26,11 @@ The image is built using the **devcontainer CLI** (`@devcontainers/cli`), which 
 - **Node.js is installed in the Dockerfile**, not via a devcontainer feature, because `@github/copilot` is an npm global package that must be installed at image build time (features run after the Dockerfile but the npm install needs Node.js present in the Dockerfile layer).
 - **Claude Code is installed via a local copy of the bootstrap script** (`.devcontainer/install-claude.sh`, adapted from `https://claude.ai/install.sh`) that installs to `/opt/claude` instead of `$HOME/.local`. The launcher is symlinked into `/usr/local/bin/claude` so it's on PATH for all users without needing `~/.local/bin` mounts.
 - **Go, .NET, uv, gh, AWS CLI are installed via devcontainer features** in `devcontainer.json` because they have well-maintained official features and don't need to be available during earlier Dockerfile steps.
-- **The build context is `..` (project root)**, not `.devcontainer/`. This is set in `devcontainer.json` `"build.context": ".."`. COPY paths in the Dockerfile are relative to the project root (e.g., `COPY entrypoint.sh`, `COPY .devcontainer/init-firewall.sh`).
+- **The build context is `..` (project root)**, not `.devcontainer/`. This is set in `devcontainer.json` `"build.context": ".."`. COPY paths in the Dockerfile are relative to the project root (e.g., `COPY entrypoint.sh`).
 - **Selective directory mounts at the same absolute paths** — only specific directories and files (`~/.claude`, `~/.claude.json`, `~/.gitconfig`, `~/.aws`, `~/.config/gh`, `~/.config/git`, `~/.config/NuGet`, `~/.ssh`, `~/src`) are mounted rather than the entire home directory. Each is mounted at the same absolute path so file paths work identically between host and container. The workdir is auto-mounted if not already covered. Mounts are configurable via `--mount`/`--mounts` flags and `AGENT_MOUNTS`/`AGENT_EXTRA_MOUNTS` env vars.
 - **SSH and GPG agent sockets are auto-forwarded** when detected on the host. `$SSH_AUTH_SOCK` is bind-mounted and passed through. For GPG, the agent socket (from `gpgconf --list-dirs agent-socket`) is mounted along with `~/.gnupg` (for the public keyring), and the entrypoint handles socket path mapping if the container's gpg expects a different path.
 - **Docker socket is auto-forwarded** when `/var/run/docker.sock` exists on the host (Docker-outside-of-Docker). The Docker CLI is installed in the image via the `docker-outside-of-docker` devcontainer feature, and the entrypoint adds the container user to the group owning the socket. This gives agents the ability to build/run containers using the host's Docker daemon. Note: this means agents can interact with *all* containers on the host.
 - **The base image** (`mcr.microsoft.com/devcontainers/base:ubuntu-24.04`) ships with a `vscode` user at UID 1000. The entrypoint remaps this user's UID/GID to match the host but keeps the `vscode` username so VS Code remote sessions continue to work.
-- **Network firewall is opt-in** (`AGENT_FIREWALL=1`) because agents frequently need to install packages from arbitrary registries, and debugging firewall issues is painful.
-
 ## Commands
 
 ```bash
@@ -53,11 +51,10 @@ Without `-n`/`--name`, `exec`/`claude`/`copilot` launch ephemeral containers nam
 | File | What it does |
 |------|-------------|
 | `agent` | Wrapper script — the main user interface. Handles build/start/exec/stop/list/claude/copilot. |
-| `entrypoint.sh` | Runs at container start as root. Remaps the `vscode` user's UID/GID to match the host, sets up sudoers, optionally runs firewall, then `gosu` drops to `vscode`. |
-| `.devcontainer/Dockerfile` | Image definition. Installs Node.js 20 (nodesource), Copilot CLI (npm), Claude Code (via install-claude.sh), OpenTofu (apt), firewall deps (iptables/ipset/etc), and copies scripts. |
+| `entrypoint.sh` | Runs at container start as root. Remaps the `vscode` user's UID/GID to match the host, sets up sudoers, sets up GPG socket forwarding, then `gosu` drops to `vscode`. |
+| `.devcontainer/Dockerfile` | Image definition. Installs Node.js (nodesource), Copilot CLI (npm), Claude Code (via install-claude.sh), OpenTofu (apt), and copies scripts. |
 | `.devcontainer/install-claude.sh` | Installs Claude Code to `/opt/claude` with checksum verification. Adapted from the official `https://claude.ai/install.sh` bootstrap script. |
-| `.devcontainer/devcontainer.json` | Declares features (Go, .NET, gh, AWS CLI, uv), build args, capabilities (NET_ADMIN/NET_RAW for firewall). |
-| `.devcontainer/init-firewall.sh` | Opt-in iptables firewall. Default-deny with whitelisted domains (Anthropic API, GitHub, npm, PyPI, Go proxy, NuGet, AWS, OpenTofu). Adapted from Anthropic's reference devcontainer. |
+| `.devcontainer/devcontainer.json` | Declares features (Go, .NET, gh, AWS CLI, uv) and build args. |
 | `plans/01-initial-project.md` | Design document from the initial planning session. |
 
 ## Installed Tools (in the built image)
@@ -72,7 +69,6 @@ Node.js 20, Go, .NET SDK, uv, git, gh (GitHub CLI), AWS CLI, OpenTofu, Docker CL
 | `HOST_GID` | entrypoint.sh | Host group ID (set by `agent start`) |
 | `HOST_HOME` | entrypoint.sh | Host home directory path (set by `agent start`) |
 | `AGENT_CONTAINER_NAME` | agent script | Override container name (alternative to `-n`/`--name` flag) |
-| `AGENT_FIREWALL` | entrypoint.sh, init-firewall.sh | Set to `1` to enable network firewall |
 | `AGENT_MOUNTS` | agent script | Override default mount list (colon-separated absolute paths) |
 | `AGENT_EXTRA_MOUNTS` | agent script | Append to default mounts (colon-separated absolute paths) |
 | `HOST_GPG_AGENT_SOCK` | entrypoint.sh | Host GPG agent socket path (set automatically by `agent start`) |
@@ -84,5 +80,4 @@ Node.js 20, Go, .NET SDK, uv, git, gh (GitHub CLI), AWS CLI, OpenTofu, Docker CL
 - **`~/.gitconfig` is mounted by default** so git identity and signing config are available in the container.
 - **`docker exec` without `-u`** runs as root, not the container user. In persistent mode, the `agent exec/claude/copilot` commands always pass `-u $(id -u):$(id -g)`. In ephemeral mode, the entrypoint remaps the `vscode` user's UID/GID and drops privileges via `gosu`.
 - **Multiple containers share the same mounted directories** read-write. Agents in different containers can potentially conflict if they modify the same files in mounted directories (e.g. `~/.claude`, `~/src`).
-- The firewall resolves domains to IPs at startup time. If a service's IPs change while the container is running, new IPs won't be allowed until the firewall is re-initialized.
 - **GPG agent forwarding** depends on the host's `gpgconf --list-dirs agent-socket` returning a valid socket. If the container's gpg resolves to a different socket path, the entrypoint creates a symlink, but unusual gpg configurations may require manual intervention.

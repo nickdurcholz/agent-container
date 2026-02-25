@@ -100,7 +100,6 @@ No configuration is needed — forwarding is automatic.
 |----------|-------------|
 | `AGENT_CONTAINER_NAME` | Default container name (alternative to `-n`/`--name` flag or positional arg) |
 | `ANTHROPIC_API_KEY` | Passed to the container if set |
-| `AGENT_FIREWALL=1` | Enable opt-in network firewall (restricts outbound to whitelisted domains only) |
 | `AGENT_MOUNTS` | Override default mount list (colon-separated absolute paths) |
 | `AGENT_EXTRA_MOUNTS` | Append to default mounts (colon-separated absolute paths) |
 
@@ -121,16 +120,6 @@ MY_CUSTOM_VAR=hello
 cd ~/src/my-repo
 ./agent start        # no name arg needed — picks up AGENT_CONTAINER_NAME from .env
 ./agent claude       # MY_CUSTOM_VAR is available inside the container
-```
-
-## Network Firewall
-
-By default, containers have unrestricted network access. Set `AGENT_FIREWALL=1` to enable a default-deny iptables firewall that only allows traffic to:
-
-- Anthropic API, GitHub, npm registry, PyPI, Go module proxy, NuGet, AWS endpoints, OpenTofu registry
-
-```bash
-AGENT_FIREWALL=1 ./agent start secure-task ~/src/my-repo
 ```
 
 ## Multi-Instance

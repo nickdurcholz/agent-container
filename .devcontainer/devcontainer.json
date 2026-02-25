@@ -15,10 +15,6 @@
     },
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
   },
-  "runArgs": [
-    "--cap-add=NET_ADMIN",
-    "--cap-add=NET_RAW"
-  ],
   "containerEnv": {
     "NODE_OPTIONS": "--max-old-space-size=4096",
     "DEVCONTAINER": "true"

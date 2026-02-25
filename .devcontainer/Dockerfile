@@ -4,9 +4,9 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 ARG NODE_MAJOR=22
 ARG COPILOT_VERSION=latest
 
-# Firewall and utility dependencies
+# Utility dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    iptables ipset iproute2 dnsutils aggregate jq \
+    jq \
     zsh fzf man-db unzip gnupg2 \
     apt-transport-https ca-certificates \
     gosu \
@@ -43,14 +43,11 @@ RUN echo "Updating dotnet..." \
     && /tmp/dotnet-install.sh --channel LTS --install-dir /usr/share/dotnet
 
 # Copy scripts (build context is project root via devcontainer.json "context": "..")
-COPY .devcontainer/init-firewall.sh /usr/local/bin/
 COPY entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Allow any user to run firewall init and user management via sudo
-RUN echo "ALL ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/firewall \
-    && echo "ALL ALL=(root) NOPASSWD: /usr/sbin/usermod, /usr/sbin/groupmod, /usr/sbin/useradd, /usr/sbin/groupadd" > /etc/sudoers.d/usermgmt \
-    && chmod 0440 /etc/sudoers.d/firewall /etc/sudoers.d/usermgmt
+RUN echo "ALL ALL=(root) NOPASSWD: /usr/sbin/usermod, /usr/sbin/groupmod, /usr/sbin/useradd, /usr/sbin/groupadd" > /etc/sudoers.d/usermgmt \
+    && chmod 0440 /etc/sudoers.d/usermgmt
 
 RUN echo 'DEVCONTAINER=true' > /.devcontainer
 ENV DEVCONTAINER=true

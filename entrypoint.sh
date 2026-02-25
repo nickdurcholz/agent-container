@@ -57,17 +57,9 @@ if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOST_HOME" ]; then
         fi
     fi
 
-    # Run firewall if requested
-    if [ "${AGENT_FIREWALL:-0}" = "1" ]; then
-        /usr/local/bin/init-firewall.sh
-    fi
-
     # Drop privileges and exec the command as the vscode user
     exec gosu "$CONTAINER_USER" "$@"
 else
     # No host user info — run as current user (devcontainer CLI path)
-    if [ "${AGENT_FIREWALL:-0}" = "1" ]; then
-        /usr/local/bin/init-firewall.sh
-    fi
     exec "$@"
 fi
