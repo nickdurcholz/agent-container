@@ -25,6 +25,7 @@ Usage: agent [-n <name>] <command> [options]
 
 Commands:
   build [-f|--force]           Build the container image (--force skips cache)
+  update [version]             Update Claude Code in the image (default: latest)
   start [workdir]              Start a persistent container (workdir defaults to \$PWD)
   exec [cmd...]                Run command in container (default: bash)
   stop                         Stop and remove a persistent container
@@ -130,6 +131,30 @@ cmd_build() {
         exit 1
     fi
     echo "Done. Image: ${IMAGE_NAME}"
+}
+
+cmd_update() {
+    local container="agent-update-$(generate_suffix)"
+
+    echo "Updating Claude Code in ${IMAGE_NAME}..."
+
+    if ! docker run \
+        --name "$container" \
+        --entrypoint /tmp/install-claude.sh \
+        "$IMAGE_NAME" \
+        "$@"; then
+        echo "Update failed." >&2
+        docker rm "$container" >/dev/null 2>&1 || true
+        exit 1
+    fi
+
+    docker commit \
+        --change 'ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]' \
+        --change 'CMD ["sleep", "infinity"]' \
+        "$container" "$IMAGE_NAME" >/dev/null
+    docker rm "$container" >/dev/null
+
+    echo "Done. Image updated: ${IMAGE_NAME}"
 }
 
 resolve_name() {
@@ -484,6 +509,7 @@ shift || true
 
 case "$command" in
     build)   cmd_build "$@" ;;
+    update)  cmd_update "$@" ;;
     start)   cmd_start "$@" ;;
     exec)    cmd_exec "$@" ;;
     stop)    cmd_stop "$@" ;;

@@ -96,3 +96,5 @@ ln -sf "$INSTALL_DIR/.local/bin/claude" /usr/local/bin/claude
 
 rm -f "$binary_path"
 echo "Claude Code installed to $INSTALL_DIR"
+
+chmod 777 -R /opt/claude
