@@ -31,10 +31,11 @@ RUN install -m 0755 -d /etc/apt/keyrings \
 # install GitHub Copilot CLI (global npm packages)
 RUN npm install -g @github/copilot@${COPILOT_VERSION}
 COPY .devcontainer/*.sh /tmp/
-RUN chmod +x /tmp/install-claude.sh \
+RUN /tmp/install-claude.sh \
     && /tmp/install-awscli.sh \
     && /tmp/install-go.sh \
-    && su vscode -c '/tmp/install-uv.sh' && su vscode -c '/home/vscode/.local/bin/uv python install 3.14'
+    && /tmp/install-uv.sh \
+    && UV_PYTHON_INSTALL_DIR=/opt/uv/python uv python install 3.14
 
 RUN echo "Updating dotnet..." \
     && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
@@ -47,6 +48,23 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 RUN echo "ALL ALL=(root) NOPASSWD: /usr/sbin/usermod, /usr/sbin/groupmod, /usr/sbin/useradd, /usr/sbin/groupadd" > /etc/sudoers.d/usermgmt \
     && chmod 0440 /etc/sudoers.d/usermgmt
+
+# Ensure $HOME/.local/bin is on PATH for all shell sessions (survives home remapping + gosu)
+RUN printf '%s\n' \
+      'case ":$PATH:" in' \
+      '  *:"$HOME/.local/bin":*) ;;' \
+      '  *) export PATH="$HOME/.local/bin:$PATH" ;;' \
+      'esac' \
+      > /etc/profile.d/agent-local-bin.sh && \
+    chmod +x /etc/profile.d/agent-local-bin.sh && \
+    mkdir -p /etc/zsh && \
+    printf '\n%s\n' \
+      '# agent-container: ensure ~/.local/bin is on PATH' \
+      'case ":$PATH:" in' \
+      '  *:"$HOME/.local/bin":*) ;;' \
+      '  *) export PATH="$HOME/.local/bin:$PATH" ;;' \
+      'esac' \
+      >> /etc/zsh/zshenv
 
 RUN echo 'DEVCONTAINER=true' > /.devcontainer
 ENV DEVCONTAINER=true

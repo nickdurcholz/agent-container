@@ -58,6 +58,8 @@ if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOST_HOME" ]; then
     fi
 
     # Drop privileges and exec the command as the vscode user
+    # NOTE: $HOME/.local/bin is added to PATH via /etc/profile.d/agent-local-bin.sh
+    # and /etc/zsh/zshenv so it survives gosu + shell rc reloads.
     exec gosu "$CONTAINER_USER" "$@"
 else
     # No host user info — run as current user (devcontainer CLI path)

@@ -22,6 +22,10 @@ has_local 2>/dev/null || alias local=typeset
 
 set -u
 
+# agent-container: install to /opt/uv with symlinks in /usr/local/bin
+UV_INSTALL_DIR="${UV_INSTALL_DIR:-/opt/uv}"
+UV_NO_MODIFY_PATH="${UV_NO_MODIFY_PATH:-1}"
+
 APP_NAME="uv"
 APP_VERSION="0.10.4"
 # Look for GitHub Enterprise-style base URL first
@@ -2078,3 +2082,11 @@ verify_checksum() {
 }
 
 download_binary_and_run_installer "$@" || exit 1
+
+# agent-container: symlink binaries into /usr/local/bin for system-wide access
+_uv_install_dir="${UV_INSTALL_DIR:-/opt/uv}"
+for _bin in uv uvx; do
+    if [ -f "$_uv_install_dir/$_bin" ]; then
+        ln -sf "$_uv_install_dir/$_bin" "/usr/local/bin/$_bin"
+    fi
+done
