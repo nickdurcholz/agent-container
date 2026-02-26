@@ -208,7 +208,7 @@ run_ephemeral() {
 
     docker run $tty_flags \
         --name "$container" \
-        --hostname "$container" \
+        --network host \
         --label "$LABEL" \
         ${rm_flag[@]+"${rm_flag[@]}"} \
         "${DOTENV_DOCKER_ARGS[@]}" \
@@ -356,7 +356,7 @@ cmd_start() {
 
     docker run -d \
         --name "$container" \
-        --hostname "$container" \
+        --network host \
         --label "$LABEL" \
         "${DOTENV_DOCKER_ARGS[@]}" \
         "${env_args[@]}" \
