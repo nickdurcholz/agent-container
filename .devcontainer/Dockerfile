@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zsh fzf man-db unzip gnupg2 \
     apt-transport-https ca-certificates \
     gosu \
+    pulseaudio-utils \
+    sox \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Node.js (needed at build time for copilot npm package)

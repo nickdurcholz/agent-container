@@ -47,6 +47,18 @@ if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ] && [ -n "$HOST_HOME" ]; then
         usermod -aG "$DOCKER_GROUP" "$CONTAINER_USER"
     fi
 
+    # Audio device access: match GID of /dev/snd so user can record audio (voice mode)
+    if [ -d /dev/snd ]; then
+        AUDIO_GID=$(stat -c '%g' /dev/snd/timer 2>/dev/null || stat -c '%g' /dev/snd/controlC0 2>/dev/null || echo "")
+        if [ -n "$AUDIO_GID" ]; then
+            if ! getent group "$AUDIO_GID" >/dev/null 2>&1; then
+                groupadd -g "$AUDIO_GID" audio-host
+            fi
+            AUDIO_GROUP=$(getent group "$AUDIO_GID" | cut -d: -f1)
+            usermod -aG "$AUDIO_GROUP" "$CONTAINER_USER"
+        fi
+    fi
+
     # GPG agent forwarding: if the host socket is mounted at a path that differs
     # from where the container's gpg expects it, create a symlink.
     if [ -n "${HOST_GPG_AGENT_SOCK:-}" ] && [ -S "$HOST_GPG_AGENT_SOCK" ]; then

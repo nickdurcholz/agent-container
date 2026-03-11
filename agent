@@ -298,6 +298,18 @@ build_agent_socket_args() {
     if [ -S "$docker_sock" ]; then
         AGENT_SOCKET_ARGS+=(-v "$docker_sock:$docker_sock")
     fi
+
+    # PulseAudio/PipeWire socket forwarding (for voice mode)
+    local pulse_sock="${PULSE_SERVER:-/run/user/$(id -u)/pulse/native}"
+    pulse_sock="${pulse_sock#unix:}"
+    if [ -S "$pulse_sock" ]; then
+        AGENT_SOCKET_ARGS+=(-v "$pulse_sock:$pulse_sock" -e "PULSE_SERVER=unix:$pulse_sock")
+    fi
+
+    # ALSA device access (fallback / for apps that use ALSA directly)
+    if [ -d /dev/snd ]; then
+        AGENT_SOCKET_ARGS+=(--device /dev/snd)
+    fi
 }
 
 cmd_start() {
@@ -429,8 +441,12 @@ cmd_claude() {
     parse_ephemeral_flags "$@"
     set -- "${EPHEMERAL_PASSTHROUGH[@]}"
 
+    if [ $# -eq 0 ]; then
+        set -- --dangerously-skip-permissions
+    fi
+
     if ! has_explicit_name; then
-        run_ephemeral claude --dangerously-skip-permissions "$@"
+        run_ephemeral claude "$@"
         return
     fi
 
@@ -448,15 +464,19 @@ cmd_claude() {
         -w "$(pwd)" \
         "${DOTENV_DOCKER_ARGS[@]}" \
         -e "TERM=${TERM:-xterm-256color}" \
-        "$container" claude --dangerously-skip-permissions "$@"
+        "$container" claude "$@"
 }
 
 cmd_copilot() {
     parse_ephemeral_flags "$@"
     set -- "${EPHEMERAL_PASSTHROUGH[@]}"
 
+    if [ $# -eq 0 ]; then
+        set -- --yolo
+    fi
+
     if ! has_explicit_name; then
-        run_ephemeral copilot --yolo "$@"
+        run_ephemeral copilot "$@"
         return
     fi
 
@@ -474,7 +494,7 @@ cmd_copilot() {
         -w "$(pwd)" \
         "${DOTENV_DOCKER_ARGS[@]}" \
         -e "TERM=${TERM:-xterm-256color}" \
-        "$container" copilot --yolo "$@"
+        "$container" copilot "$@"
 }
 
 # --- Main ---
