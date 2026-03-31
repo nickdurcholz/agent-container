@@ -26,7 +26,7 @@ The image is built using the **devcontainer CLI** (`@devcontainers/cli`), which 
 - **Node.js is installed in the Dockerfile**, not via a devcontainer feature, because `@github/copilot` is an npm global package that must be installed at image build time (features run after the Dockerfile but the npm install needs Node.js present in the Dockerfile layer).
 - **Claude Code is installed via a local copy of the bootstrap script** (`.devcontainer/install-claude.sh`, adapted from `https://claude.ai/install.sh`) that installs to `/opt/claude` instead of `$HOME/.local`. The launcher is symlinked into `/usr/local/bin/claude` so it's on PATH for all users without needing `~/.local/bin` mounts.
 - **uv is installed via a local copy of the bootstrap script** (`.devcontainer/install-uv.sh`, adapted from `https://astral.sh/uv/install.sh`) that installs to `/opt/uv` instead of `$HOME/.local`. Symlinks for `uv` and `uvx` are created in `/usr/local/bin` so they're on PATH for all users. Python toolchains are installed to `/opt/uv/python`.
-- **`$HOME/.local/bin` is added to PATH via `/etc/profile.d/agent-local-bin.sh` and `/etc/zsh/zshenv`** rather than via `export PATH` in the entrypoint, because `gosu` + shell rc files can reset inherited environment variables. The profile.d script handles bash login shells; the zshenv addition handles all zsh invocations.
+- **`$HOME/.local/bin` and Homebrew are added to PATH via `/etc/profile.d/agent-local-bin.sh`, `/etc/bash.bashrc`, and `/etc/zsh/zshenv`** rather than via `export PATH` in the entrypoint, because `gosu` + shell rc files can reset inherited environment variables. The profile.d script handles bash login shells; bash.bashrc handles interactive non-login bash shells (e.g. `docker exec ... bash`); zshenv handles all zsh invocations.
 - **Go, .NET, gh, AWS CLI are installed via devcontainer features** in `devcontainer.json` or Dockerfile scripts because they have well-maintained official features/installers and don't need to be available during earlier Dockerfile steps.
 - **The build context is `..` (project root)**, not `.devcontainer/`. This is set in `devcontainer.json` `"build.context": ".."`. COPY paths in the Dockerfile are relative to the project root (e.g., `COPY entrypoint.sh`).
 - **Selective directory mounts at the same absolute paths** — only specific directories and files (`~/.claude`, `~/.claude.json`, `~/.gitconfig`, `~/.aws`, `~/.config/gh`, `~/.config/git`, `~/.config/NuGet`, `~/.ssh`, `~/src`) are mounted rather than the entire home directory. Each is mounted at the same absolute path so file paths work identically between host and container. The workdir is auto-mounted if not already covered. Mounts are configurable via `--mount`/`--mounts` flags and `AGENT_MOUNTS`/`AGENT_EXTRA_MOUNTS` env vars.
@@ -62,7 +62,7 @@ Without `-n`/`--name`, `exec`/`claude`/`copilot` launch ephemeral containers nam
 
 ## Installed Tools (in the built image)
 
-Node.js 20, Go, .NET SDK, uv, git, gh (GitHub CLI), AWS CLI, OpenTofu, Docker CLI, Claude Code (`claude`), GitHub Copilot CLI (`copilot`), zsh, fzf, jq, gosu
+Node.js 20, Go, .NET SDK, uv, git, gh (GitHub CLI), AWS CLI, OpenTofu, Docker CLI, Claude Code (`claude`), GitHub Copilot CLI (`copilot`), Homebrew, PlantUML (`plantuml`), zsh, fzf, jq, gosu
 
 ## Environment Variables
 

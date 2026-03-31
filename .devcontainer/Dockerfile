@@ -37,7 +37,7 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && echo \
         "deb [signed-by=/etc/apt/keyrings/opentofu.gpg,/etc/apt/keyrings/opentofu-repo.gpg] https://packages.opentofu.org/opentofu/tofu/any/ any main" \
         | tee /etc/apt/sources.list.d/opentofu.list >/dev/null \
-    && apt-get update && apt-get install -y tofu \
+    && apt-get update && apt-get install -y tofu build-essential procps curl file \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # install GitHub Copilot CLI (global npm packages)
@@ -61,21 +61,40 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN echo "ALL ALL=(root) NOPASSWD: /usr/sbin/usermod, /usr/sbin/groupmod, /usr/sbin/useradd, /usr/sbin/groupadd" > /etc/sudoers.d/usermgmt \
     && chmod 0440 /etc/sudoers.d/usermgmt
 
-# Ensure $HOME/.local/bin is on PATH for all shell sessions (survives home remapping + gosu)
+# Homebrew (installed as vscode user) + plantuml
+USER vscode
+RUN NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+    && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" \
+    && brew install plantuml \
+    && brew cleanup --prune=all
+USER root
+
+# Ensure $HOME/.local/bin and Homebrew are on PATH for all shell sessions (survives home remapping + gosu)
+# profile.d = bash login shells, bash.bashrc = bash interactive non-login, zshenv = all zsh
 RUN printf '%s\n' \
       'case ":$PATH:" in' \
       '  *:"$HOME/.local/bin":*) ;;' \
       '  *) export PATH="$HOME/.local/bin:$PATH" ;;' \
       'esac' \
+      'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv 2>/dev/null)" || true' \
       > /etc/profile.d/agent-local-bin.sh && \
     chmod +x /etc/profile.d/agent-local-bin.sh && \
-    mkdir -p /etc/zsh && \
     printf '\n%s\n' \
-      '# agent-container: ensure ~/.local/bin is on PATH' \
+      '# agent-container: ensure ~/.local/bin and Homebrew are on PATH' \
       'case ":$PATH:" in' \
       '  *:"$HOME/.local/bin":*) ;;' \
       '  *) export PATH="$HOME/.local/bin:$PATH" ;;' \
       'esac' \
+      'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv 2>/dev/null)" || true' \
+      >> /etc/bash.bashrc && \
+    mkdir -p /etc/zsh && \
+    printf '\n%s\n' \
+      '# agent-container: ensure ~/.local/bin and Homebrew are on PATH' \
+      'case ":$PATH:" in' \
+      '  *:"$HOME/.local/bin":*) ;;' \
+      '  *) export PATH="$HOME/.local/bin:$PATH" ;;' \
+      'esac' \
+      'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv 2>/dev/null)" || true' \
       >> /etc/zsh/zshenv
 
 RUN echo 'DEVCONTAINER=true' > /.devcontainer
